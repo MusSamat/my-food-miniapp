@@ -9,6 +9,7 @@ import { createOrder, getOffices, saveUser } from '../services/api';
 import { formatPrice } from '../components/ui';
 import { useTelegram } from '../hooks/useTelegram';
 import useSettingsStore from '../stores/settingsStore';
+import useBranchStore from '../stores/branchStore';
 
 // ═══ InputField OUTSIDE component — prevents focus loss on re-render ═══
 const InputField = ({ icon: Icon, label, field, type = 'text', placeholder, required, value, onChange, error, rightElement }) => (
@@ -42,13 +43,16 @@ const CheckoutPage = () => {
     const { user: savedUser, updateUser } = useUserStore();
     const { settings } = useSettingsStore();
 
-    const DELIVERY_FEE = settings?.delivery_fee || 150;
-    const MIN_ORDER = settings?.min_order_amount || 0;
-    const isOpen = settings?.is_currently_open !== false;
+    const { branch, refreshBranch } = useBranchStore();
+    const isMorning = branch?.is_morning_mode === true;
+    const DELIVERY_FEE = isMorning ? 0 : (branch?.delivery_fee || 150);
+    const MIN_ORDER = branch?.min_order_amount || 0;
+    const isOpen = branch?.is_currently_open !== false;
 
     const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
     const discount = promo?.discount || 0;
     const total = subtotal - discount + DELIVERY_FEE;
+
 
     const [offices, setOffices] = useState([]);
     const [addressType, setAddressType] = useState('office');
@@ -70,6 +74,7 @@ const CheckoutPage = () => {
 
     // ─── Загрузка офисов ───
     useEffect(() => { getOffices().then(setOffices); }, []);
+    useEffect(() => { refreshBranch(); }, []);
 
     // ─── Заполнение формы из сохранённых данных ───
     useEffect(() => {
@@ -172,6 +177,7 @@ const CheckoutPage = () => {
                 type: 'delivery',
                 name: form.name,
                 phone: form.phone,
+                branch_id: branch?.id || null,
                 items: items.map(i => ({ id: i.id, quantity: i.quantity })),
                 ...(promo && { promo_code: promo.code }),
                 comment: form.comment || null,
@@ -348,10 +354,10 @@ const CheckoutPage = () => {
             </div>
 
 
-            {!isOpen && (
-                <div className="bg-red-50 rounded-xl p-4 text-center">
-                    <p className="text-red-600 font-semibold text-sm">Ресторан сейчас закрыт</p>
-                    <p className="text-red-400 text-xs mt-1">Время работы: {settings?.working_hours_from} — {settings?.working_hours_to}</p>
+            {isMorning && branch?.office_addresses?.length > 0 && (
+                <div className="bg-amber-50 rounded-xl p-3 mb-4 text-sm">
+                    <p className="font-semibold text-amber-700">Утренний режим (07:00-10:00)</p>
+                    <p className="text-amber-600 text-xs mt-1">Доставка бесплатная, только по офисным адресам</p>
                 </div>
             )}
             {MIN_ORDER > 0 && subtotal < MIN_ORDER && (

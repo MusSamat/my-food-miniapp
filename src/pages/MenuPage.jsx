@@ -8,8 +8,9 @@ import { Counter, AddButton, ItemBadge, LazyImage, ClosedBanner, Spinner, format
 import FoodDetailModal from '../components/FoodDetailModal';
 import FloatingCartButton from '../components/FloatingCartButton';
 import useCartStore from '../stores/cartStore';
-import useSettingsStore from '../stores/settingsStore';
+// import useSettingsStore from '../stores/settingsStore';
 import { useTelegram } from '../hooks/useTelegram';
+import useBranchStore from '../stores/branchStore';
 
 // ─── Food Card ───
 const FoodCard = ({ item, onOpen, isClosed, isFav, onToggleFav }) => {
@@ -113,8 +114,9 @@ const PopularCard = ({ item, onOpen, isClosed }) => {
 const MenuPage = () => {
     const navigate = useNavigate();
     const { ready, expand, userId, haptic } = useTelegram();
-    const { settings, refreshSettings } = useSettingsStore();
-    const isClosed = settings?.is_currently_open === false;
+    // const { settings, refreshSettings } = useSettingsStore();
+    const { branch, branchId, refreshBranch } = useBranchStore();
+    const isClosed = branch?.is_currently_open === false;
 
     const [categories, setCategories] = useState([]);
     const [popular, setPopular] = useState([]);
@@ -135,8 +137,12 @@ const MenuPage = () => {
     useEffect(() => {
         ready();
         expand();
-        refreshSettings();
-        Promise.all([getCategories(), getPopularItems()])
+        refreshBranch();
+
+        Promise.all([
+            getCategories(branchId),  // pass branch_id
+            getPopularItems()
+        ])
             .then(([cats, pop]) => {
                 setCategories(cats);
                 setPopular(pop);
@@ -144,11 +150,8 @@ const MenuPage = () => {
             })
             .finally(() => setLoading(false));
 
-        // Load favorites
         if (userId) {
-            getFavorites(userId).then(favs => {
-                setFavIds(new Set(favs.map(f => f.id)));
-            }).catch(() => {});
+            getFavorites(userId).then(favs => setFavIds(new Set(favs.map(f => f.id)))).catch(() => {});
         }
     }, []);
 
@@ -258,7 +261,7 @@ const MenuPage = () => {
             </div>
 
             {/* Closed banner */}
-            {isClosed && settings && (<ClosedBanner from={settings.working_hours_from} to={settings.working_hours_to} />)}
+            {isClosed && branch && (<ClosedBanner from={branch.working_hours_from} to={branch.working_hours_to} />)}
 
             <div className="px-4 pt-4">
                 {searchResults !== null ? (

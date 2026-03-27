@@ -6,7 +6,11 @@ const api = axios.create({
 });
 
 // ─── Menu ───
-export const getCategories = () => api.get('/categories').then(r => r.data.data);
+export const getCategories = (branchId) => {
+    const params = branchId ? { branch_id: branchId } : {};
+    return api.get('/categories', { params }).then(r => r.data.data);
+};
+
 export const getPopularItems = () => api.get('/items/popular').then(r => r.data.data);
 export const searchItems = (q) => api.get('/items/search', { params: { q } }).then(r => r.data.data);
 export const getItem = (id) => api.get(`/items/${id}`).then(r => r.data.data);
@@ -37,5 +41,9 @@ export const toggleFavorite = (telegram_id, item_id) => api.post('/favorites', {
 // ─── Reviews ───
 export const submitReview = (data) => api.post('/reviews', data).then(r => r.data.data);
 export const getReview = (orderId) => api.get(`/reviews/${orderId}`).then(r => r.data.data);
+
+// ─── Branches ───
+export const getBranches = () => api.get('/branches/public').then(r => r.data.data);
+export const getBranchSettings = (id) => api.get(`/branches/public/${id}`).then(r => r.data.data);
 
 export default api;

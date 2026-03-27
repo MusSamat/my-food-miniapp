@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import BranchSelectPage from './pages/BranchSelectPage';
 import MenuPage from './pages/MenuPage';
 import CartPage from './pages/CartPage';
 import CheckoutPage from './pages/CheckoutPage';
@@ -7,15 +8,18 @@ import OrderStatusPage from './pages/OrderStatusPage';
 import OrderHistoryPage from './pages/OrderHistoryPage';
 import { useTelegram } from './hooks/useTelegram';
 import useUserStore from './stores/userStore';
-import useSettingsStore from './stores/settingsStore';
+import useBranchStore from './stores/branchStore';
 import { getUser, saveUser } from './services/api';
+
+const RequireBranch = ({ children }) => {
+    const { branchId } = useBranchStore();
+    if (!branchId) return <Navigate to="/" replace />;
+    return children;
+};
 
 const App = () => {
     const { userId, username, firstName, lastName } = useTelegram();
     const { setUser } = useUserStore();
-    const { loadSettings } = useSettingsStore();
-
-    useEffect(() => { loadSettings(); }, []);
 
     useEffect(() => {
         if (!userId) return;
@@ -33,13 +37,13 @@ const App = () => {
     return (
         <BrowserRouter>
             <Routes>
-                <Route path="/" element={<MenuPage />} />
-                <Route path="/menu" element={<MenuPage />} />
-                <Route path="/cart" element={<CartPage />} />
-                <Route path="/checkout" element={<CheckoutPage />} />
+                <Route path="/" element={<BranchSelectPage />} />
+                <Route path="/menu" element={<RequireBranch><MenuPage /></RequireBranch>} />
+                <Route path="/cart" element={<RequireBranch><CartPage /></RequireBranch>} />
+                <Route path="/checkout" element={<RequireBranch><CheckoutPage /></RequireBranch>} />
                 <Route path="/order-status/:id" element={<OrderStatusPage />} />
                 <Route path="/orders" element={<OrderHistoryPage />} />
-                <Route path="*" element={<MenuPage />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
         </BrowserRouter>
     );
