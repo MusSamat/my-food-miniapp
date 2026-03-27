@@ -27,4 +27,15 @@ export const getOrderHistory = (telegramId) => api.get(`/orders/history/${telegr
 export const getUser = (telegramId) => api.get(`/users/${telegramId}`).then(r => r.data.data);
 export const saveUser = (data) => api.post('/users', data).then(r => r.data.data);
 
+// ─── Settings ───
+export const getRestaurantSettings = () => api.get('/settings').then(r => r.data.data);
+
+// ─── Favorites ───
+export const getFavorites = (telegramId) => api.get(`/favorites/${telegramId}`).then(r => r.data.data);
+export const toggleFavorite = (telegram_id, item_id) => api.post('/favorites', { telegram_id, item_id }).then(r => r.data.data);
+
+// ─── Reviews ───
+export const submitReview = (data) => api.post('/reviews', data).then(r => r.data.data);
+export const getReview = (orderId) => api.get(`/reviews/${orderId}`).then(r => r.data.data);
+
 export default api;

@@ -8,6 +8,7 @@ import useUserStore from '../stores/userStore';
 import { createOrder, getOffices, saveUser } from '../services/api';
 import { formatPrice } from '../components/ui';
 import { useTelegram } from '../hooks/useTelegram';
+import useSettingsStore from '../stores/settingsStore';
 
 // ═══ InputField OUTSIDE component — prevents focus loss on re-render ═══
 const InputField = ({ icon: Icon, label, field, type = 'text', placeholder, required, value, onChange, error, rightElement }) => (
@@ -32,13 +33,18 @@ const InputField = ({ icon: Icon, label, field, type = 'text', placeholder, requ
     </div>
 );
 
-const DELIVERY_FEE = 150;
+// const DELIVERY_FEE = 150;
 
 const CheckoutPage = () => {
     const navigate = useNavigate();
     const { user: tgUser, userId, haptic, openLink, requestLocation } = useTelegram();
     const { items, promo, clear } = useCartStore();
     const { user: savedUser, updateUser } = useUserStore();
+    const { settings } = useSettingsStore();
+
+    const DELIVERY_FEE = settings?.delivery_fee || 150;
+    const MIN_ORDER = settings?.min_order_amount || 0;
+    const isOpen = settings?.is_currently_open !== false;
 
     const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
     const discount = promo?.discount || 0;
@@ -341,12 +347,38 @@ const CheckoutPage = () => {
                 </div>
             </div>
 
+
+            {!isOpen && (
+                <div className="bg-red-50 rounded-xl p-4 text-center">
+                    <p className="text-red-600 font-semibold text-sm">Ресторан сейчас закрыт</p>
+                    <p className="text-red-400 text-xs mt-1">Время работы: {settings?.working_hours_from} — {settings?.working_hours_to}</p>
+                </div>
+            )}
+            {MIN_ORDER > 0 && subtotal < MIN_ORDER && (
+                <div className="bg-amber-50 rounded-xl p-4 text-center">
+                    <p className="text-amber-600 font-semibold text-sm">Минимальный заказ: {formatPrice(MIN_ORDER)} сом</p>
+                    <p className="text-amber-400 text-xs mt-1">Добавьте ещё на {formatPrice(MIN_ORDER - subtotal)} сом</p>
+                </div>
+            )}
+
             <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 safe-bottom">
-                <button onClick={handleSubmit} disabled={submitting}
-                        className={clsx('btn-primary w-full', submitting && 'opacity-70')}>
-                    {submitting ? <><Loader2 size={18} className="animate-spin" /> Обработка...</> : `Оплатить ${formatPrice(total)} сом`}
+                <button
+                    onClick={handleSubmit}
+                    disabled={submitting || !isOpen || (MIN_ORDER > 0 && subtotal < MIN_ORDER)}
+                    className={clsx('btn-primary w-full',
+                        (submitting || !isOpen || (MIN_ORDER > 0 && subtotal < MIN_ORDER)) && 'opacity-50'
+                    )}
+                >
+                    {submitting ? (
+                        <><Loader2 size={18} className="animate-spin" /> Обработка...</>
+                    ) : !isOpen ? (
+                        'Ресторан закрыт'
+                    ) : (
+                        `Оплатить ${formatPrice(total)} сом`
+                    )}
                 </button>
             </div>
+
         </div>
     );
 };

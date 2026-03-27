@@ -1,6 +1,54 @@
-import React from 'react';
-import { Minus, Plus, X, Loader2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Minus, Plus, X, Loader2, Clock } from 'lucide-react';
 import { clsx } from 'clsx';
+
+// ─── Lazy Image with placeholder ───
+export const LazyImage = ({ src, alt, className, placeholder }) => {
+    const [loaded, setLoaded] = useState(false);
+    const [error, setError] = useState(false);
+
+    if (!src || error) {
+        return (
+            <div className={clsx('bg-slate-100 flex items-center justify-center', className)}>
+                <span className="text-3xl">{placeholder || '🍽'}</span>
+            </div>
+        );
+    }
+
+    return (
+        <div className={clsx('relative bg-slate-100 overflow-hidden', className)}>
+            {!loaded && (
+                <div className="absolute inset-0 bg-slate-100 animate-pulse flex items-center justify-center">
+                    <span className="text-2xl opacity-30">{placeholder || '🍽'}</span>
+                </div>
+            )}
+            <img
+                src={src}
+                alt={alt || ''}
+                loading="lazy"
+                onLoad={() => setLoaded(true)}
+                onError={() => setError(true)}
+                className={clsx(
+                    'w-full h-full object-cover transition-opacity duration-300',
+                    loaded ? 'opacity-100' : 'opacity-0'
+                )}
+            />
+        </div>
+    );
+};
+
+// ─── Closed Banner ───
+export const ClosedBanner = ({ from, to }) => (
+    <div className="bg-red-50 border border-red-100 rounded-2xl p-4 mx-4 mt-4 flex items-center gap-3">
+        <div className="p-2 bg-red-100 rounded-xl shrink-0">
+            <Clock size={18} className="text-red-500" />
+        </div>
+        <div>
+            <p className="font-semibold text-red-700 text-sm">Ресторан сейчас закрыт</p>
+            {from && to && <p className="text-red-400 text-xs mt-0.5">Время работы: {from} — {to}</p>}
+        </div>
+    </div>
+);
 
 // ─── Counter [- N +] ───
 export const Counter = ({ quantity, onAdd, onRemove, size = 'md' }) => {
@@ -17,12 +65,12 @@ export const Counter = ({ quantity, onAdd, onRemove, size = 'md' }) => {
     return (
         <div className={clsx('flex items-center bg-brand-50 rounded-lg', sizes[size])}>
             <button onClick={(e) => { e.stopPropagation(); onRemove(); }}
-                className={clsx('flex items-center justify-center rounded-l-lg text-brand-600 active:bg-brand-100 transition-colors', btnSizes[size])}>
+                    className={clsx('flex items-center justify-center rounded-l-lg text-brand-600 active:bg-brand-100 transition-colors', btnSizes[size])}>
                 <Minus size={iconSize} />
             </button>
             <span className="font-bold text-brand-700 min-w-[20px] text-center">{quantity}</span>
             <button onClick={(e) => { e.stopPropagation(); onAdd(); }}
-                className={clsx('flex items-center justify-center rounded-r-lg text-brand-600 active:bg-brand-100 transition-colors', btnSizes[size])}>
+                    className={clsx('flex items-center justify-center rounded-r-lg text-brand-600 active:bg-brand-100 transition-colors', btnSizes[size])}>
                 <Plus size={iconSize} />
             </button>
         </div>
@@ -30,10 +78,14 @@ export const Counter = ({ quantity, onAdd, onRemove, size = 'md' }) => {
 };
 
 // ─── Add Button (круглая "+") ───
-export const AddButton = ({ onClick, size = 32 }) => (
+export const AddButton = ({ onClick, size = 32, disabled }) => (
     <button
-        onClick={(e) => { e.stopPropagation(); onClick(); }}
-        className="flex items-center justify-center rounded-full bg-brand-500 text-white active:scale-90 transition-transform"
+        onClick={(e) => { e.stopPropagation(); if (!disabled) onClick(); }}
+        disabled={disabled}
+        className={clsx(
+            'flex items-center justify-center rounded-full bg-brand-500 text-white active:scale-90 transition-transform',
+            disabled && 'opacity-40 active:scale-100'
+        )}
         style={{ width: size, height: size }}
     >
         <Plus size={size * 0.5} />

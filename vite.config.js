@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import {defineConfig} from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
@@ -8,7 +8,7 @@ export default defineConfig({
         host: true,
         strictPort: true,
         allowedHosts: [
-            'searches-cloth-width-prospect.trycloudflare.com',
+            'explicitly-grande-definition-laugh.trycloudflare.com',
             '.trycloudflare.com'
         ],
         hmr: {
