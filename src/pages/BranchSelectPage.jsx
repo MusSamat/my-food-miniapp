@@ -66,7 +66,7 @@ const BranchSelectPage = () => {
                 ))}
 
                 {branches.length === 0 && (
-                    <p className="text-center text-slate-400 py-8">Нет доступных филиалов</p>
+                    <p className="text-center text-slate-400 py-8">Филиалы в данный момент закрыты. Попробуйте позже.</p>
                 )}
             </div>
         </div>
