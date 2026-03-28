@@ -390,12 +390,12 @@ const CheckoutPage = () => {
                 </div>
 
                 {/* ─── Warnings ─── */}
-                {!isOpen && (
-                    <div className="bg-red-50 rounded-xl p-4 text-center">
-                        <p className="text-red-600 font-semibold text-sm">Ресторан сейчас закрыт</p>
-                        <p className="text-red-400 text-xs mt-1">Время работы: {branch?.working_hours_from} — {branch?.working_hours_to}</p>
-                    </div>
-                )}
+                {/*{!isOpen && (*/}
+                {/*    <div className="bg-red-50 rounded-xl p-4 text-center">*/}
+                {/*        <p className="text-red-600 font-semibold text-sm">Ресторан сейчас закрыт</p>*/}
+                {/*        <p className="text-red-400 text-xs mt-1">Время работы: {branch?.working_hours_from} — {branch?.working_hours_to}</p>*/}
+                {/*    </div>*/}
+                {/*)}*/}
 
                 {MIN_ORDER > 0 && subtotal < MIN_ORDER && (
                     <div className="bg-amber-50 rounded-xl p-4 text-center">

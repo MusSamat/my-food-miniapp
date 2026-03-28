@@ -4,7 +4,7 @@ import { Search, X, ChefHat, Clock, Heart, MapPin } from 'lucide-react';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
 import { getCategories, getPopularItems, searchItems, toggleFavorite, getFavorites } from '../services/api';
-import { Counter, AddButton, ItemBadge, LazyImage, ClosedBanner, Spinner, formatPrice } from '../components/ui';
+import { Counter, AddButton, ItemBadge, LazyImage, Spinner, formatPrice } from '../components/ui';
 import FoodDetailModal from '../components/FoodDetailModal';
 import FloatingCartButton from '../components/FloatingCartButton';
 import useCartStore from '../stores/cartStore';
@@ -266,9 +266,6 @@ const MenuPage = () => {
                     </div>
                 )}
             </div>
-
-            {/* Closed banner */}
-            {isClosed && branch && (<ClosedBanner from={branch.working_hours_from} to={branch.working_hours_to} />)}
 
             <div className="px-4 pt-4">
                 {searchResults !== null ? (
