@@ -5,13 +5,12 @@ import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
 import useCartStore from '../stores/cartStore';
 import useUserStore from '../stores/userStore';
+import useBranchStore from '../stores/branchStore';
 import { createOrder, getOffices, saveUser } from '../services/api';
 import { formatPrice } from '../components/ui';
 import { useTelegram } from '../hooks/useTelegram';
-import useSettingsStore from '../stores/settingsStore';
-import useBranchStore from '../stores/branchStore';
 
-// ═══ InputField OUTSIDE component — prevents focus loss on re-render ═══
+// ═══ InputField OUTSIDE component — prevents focus loss ═══
 const InputField = ({ icon: Icon, label, field, type = 'text', placeholder, required, value, onChange, error, rightElement }) => (
     <div>
         <label className="block text-[13px] font-medium text-slate-500 mb-1">
@@ -34,16 +33,14 @@ const InputField = ({ icon: Icon, label, field, type = 'text', placeholder, requ
     </div>
 );
 
-// const DELIVERY_FEE = 150;
-
 const CheckoutPage = () => {
     const navigate = useNavigate();
     const { user: tgUser, userId, haptic, openLink, requestLocation } = useTelegram();
     const { items, promo, clear } = useCartStore();
     const { user: savedUser, updateUser } = useUserStore();
-    const { settings } = useSettingsStore();
-
     const { branch, refreshBranch } = useBranchStore();
+
+    // ─── Branch-based settings ───
     const isMorning = branch?.is_morning_mode === true;
     const DELIVERY_FEE = isMorning ? 0 : (branch?.delivery_fee || 150);
     const MIN_ORDER = branch?.min_order_amount || 0;
@@ -53,30 +50,23 @@ const CheckoutPage = () => {
     const discount = promo?.discount || 0;
     const total = subtotal - discount + DELIVERY_FEE;
 
-
     const [offices, setOffices] = useState([]);
     const [addressType, setAddressType] = useState('office');
     const [form, setForm] = useState({
-        name: '',
-        phone: '',
-        address: '',
-        apartment: '',
-        floor: '',
-        entrance: '',
-        courier_comment: '',
-        office_id: '',
-        comment: '',
-        cutlery_count: 1,
+        name: '', phone: '', address: '', apartment: '', floor: '', entrance: '',
+        courier_comment: '', office_id: '', comment: '', cutlery_count: 1,
     });
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const [locating, setLocating] = useState(false);
 
-    // ─── Загрузка офисов ───
-    useEffect(() => { getOffices().then(setOffices); }, []);
-    useEffect(() => { refreshBranch(); }, []);
+    // ─── Load offices + refresh branch settings ───
+    useEffect(() => {
+        getOffices().then(setOffices);
+        refreshBranch();
+    }, []);
 
-    // ─── Заполнение формы из сохранённых данных ───
+    // ─── Fill form from saved user data ───
     useEffect(() => {
         const name = savedUser?.first_name || tgUser?.first_name || '';
         const phone = savedUser?.phone || '';
@@ -97,13 +87,10 @@ const CheckoutPage = () => {
             office_id: officeId ? String(officeId) : f.office_id,
         }));
 
-        // Если есть сохранённый адрес — переключить на "Другой адрес"
-        if (address && !officeId) {
-            setAddressType('custom');
-        }
+        if (address && !officeId) setAddressType('custom');
     }, [savedUser, tgUser]);
 
-    // ─── Редирект если корзина пуста ───
+    // ─── Redirect if cart empty ───
     useEffect(() => {
         if (items.length === 0) navigate('/');
     }, [items]);
@@ -124,13 +111,12 @@ const CheckoutPage = () => {
         setErrors({});
     };
 
-    // ─── Запрос геолокации ───
+    // ─── Geolocation ───
     const handleRequestLocation = async () => {
         setLocating(true);
         try {
             const loc = await requestLocation();
             if (loc) {
-                // Reverse geocoding через Nominatim (бесплатный)
                 try {
                     const resp = await fetch(
                         `https://nominatim.openstreetmap.org/reverse?lat=${loc.latitude}&lon=${loc.longitude}&format=json&accept-language=ru`
@@ -138,10 +124,7 @@ const CheckoutPage = () => {
                     const data = await resp.json();
                     const addr = data.display_name || `${loc.latitude}, ${loc.longitude}`;
                     update('address', addr);
-
-                    // Сохраняем координаты в userStore
                     updateUser({ latitude: loc.latitude, longitude: loc.longitude, location_address: addr });
-
                     toast.success('Адрес определён');
                     haptic('success');
                 } catch {
@@ -156,16 +139,25 @@ const CheckoutPage = () => {
         }
     };
 
+    // ─── Validation ───
     const validate = () => {
         const e = {};
         if (!form.name.trim()) e.name = 'Введите имя';
         if (!form.phone.trim()) e.phone = 'Введите телефон';
-        if (addressType === 'office' && !form.office_id) e.office_id = 'Выберите офис';
-        if (addressType === 'custom' && !form.address.trim()) e.address = 'Введите адрес';
+
+        if (isMorning) {
+            if (!form.office_id) e.office_id = 'Выберите офис';
+        } else if (addressType === 'office') {
+            if (!form.office_id) e.office_id = 'Выберите офис';
+        } else {
+            if (!form.address.trim()) e.address = 'Введите адрес';
+        }
+
         setErrors(e);
         return Object.keys(e).length === 0;
     };
 
+    // ─── Submit order ───
     const handleSubmit = async () => {
         if (!validate()) { haptic('error'); return; }
         setSubmitting(true);
@@ -184,7 +176,12 @@ const CheckoutPage = () => {
                 cutlery_count: form.cutlery_count,
             };
 
-            if (addressType === 'office' && selectedOffice) {
+            if (isMorning) {
+                // Morning mode: office from branch's office_addresses
+                const morningOffice = branch?.office_addresses?.find(o => o.id === parseInt(form.office_id));
+                orderData.address = morningOffice?.address || '';
+                orderData.office_id = parseInt(form.office_id);
+            } else if (addressType === 'office' && selectedOffice) {
                 orderData.address = selectedOffice.address;
                 orderData.office_id = selectedOffice.id;
             } else {
@@ -197,7 +194,7 @@ const CheckoutPage = () => {
 
             const result = await createOrder(orderData);
 
-            // ─── Сохраняем данные пользователя на backend ───
+            // ─── Save user data ───
             const userData = {
                 telegram_id: userId || 0,
                 username: tgUser?.username,
@@ -206,7 +203,9 @@ const CheckoutPage = () => {
                 phone: form.phone,
             };
 
-            if (addressType === 'office' && selectedOffice) {
+            if (isMorning) {
+                userData.saved_office_id = parseInt(form.office_id);
+            } else if (addressType === 'office' && selectedOffice) {
                 userData.saved_office_id = selectedOffice.id;
             } else {
                 userData.saved_address = form.address;
@@ -234,20 +233,17 @@ const CheckoutPage = () => {
         }
     };
 
-    // ─── Кнопка геолокации для поля адреса ───
+    // ─── Location button ───
     const locationButton = (
-        <button
-            type="button"
-            onClick={handleRequestLocation}
-            disabled={locating}
-            className="p-2 text-brand-500 hover:bg-brand-50 rounded-lg transition-colors"
-        >
+        <button type="button" onClick={handleRequestLocation} disabled={locating}
+                className="p-2 text-brand-500 hover:bg-brand-50 rounded-lg transition-colors">
             {locating ? <Loader2 size={16} className="animate-spin" /> : <LocateFixed size={16} />}
         </button>
     );
 
     return (
         <div className="min-h-screen flex flex-col pb-28">
+            {/* Header */}
             <div className="flex items-center px-4 h-14 border-b border-slate-100 bg-white sticky top-0 z-10">
                 <button onClick={() => navigate(-1)} className="p-1"><ArrowLeft size={22} className="text-slate-600" /></button>
                 <span className="flex-1 text-center font-semibold text-[18px]">Оформление</span>
@@ -255,59 +251,97 @@ const CheckoutPage = () => {
             </div>
 
             <div className="px-4 pt-5 space-y-5">
+
                 {/* ─── Адрес доставки ─── */}
                 <div>
                     <h3 className="text-[14px] font-semibold text-slate-700 mb-3">Адрес доставки</h3>
-                    <div className="flex bg-surface rounded-xl p-1 mb-4">
-                        <button onClick={() => handleAddressTypeChange('office')}
-                                className={clsx('flex-1 h-11 rounded-xl text-[14px] font-medium transition-all duration-200 flex items-center justify-center gap-2',
-                                    addressType === 'office' ? 'bg-brand-500 text-white shadow-sm' : 'text-slate-500')}>
-                            <Building2 size={16} /> Наш офис
-                        </button>
-                        <button onClick={() => handleAddressTypeChange('custom')}
-                                className={clsx('flex-1 h-11 rounded-xl text-[14px] font-medium transition-all duration-200 flex items-center justify-center gap-2',
-                                    addressType === 'custom' ? 'bg-brand-500 text-white shadow-sm' : 'text-slate-500')}>
-                            <PenLine size={16} /> Другой адрес
-                        </button>
-                    </div>
 
-                    {addressType === 'office' && (
+                    {/* Morning mode banner */}
+                    {isMorning && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+                            <p className="font-semibold text-amber-700 text-sm">☀️ Утренний режим</p>
+                            <p className="text-amber-600 text-xs mt-1">Доставка бесплатная! Выберите офис из списка.</p>
+                        </div>
+                    )}
+
+                    {isMorning ? (
+                        /* ─── Morning: only branch office addresses ─── */
                         <div>
                             <label className="block text-[13px] font-medium text-slate-500 mb-1">Выберите офис *</label>
                             <select className={clsx('input', errors.office_id && 'border-red-400')}
                                     value={form.office_id} onChange={(e) => update('office_id', e.target.value)}>
                                 <option value="">Выберите офис доставки</option>
-                                {offices.map(o => <option key={o.id} value={o.id}>{o.name} — {o.address}</option>)}
+                                {branch?.office_addresses?.map(o => (
+                                    <option key={o.id} value={o.id}>{o.name} — {o.address}</option>
+                                ))}
                             </select>
                             {errors.office_id && <p className="text-xs text-red-500 mt-1">{errors.office_id}</p>}
+
                             {form.office_id && (() => {
-                                const office = offices.find(o => o.id === parseInt(form.office_id));
+                                const office = branch?.office_addresses?.find(o => o.id === parseInt(form.office_id));
                                 if (!office) return null;
                                 return (
-                                    <div className="mt-3 p-3 bg-brand-50 rounded-xl text-sm">
+                                    <div className="mt-3 p-3 bg-amber-50 rounded-xl text-sm">
                                         <p className="font-semibold text-slate-700">{office.name}</p>
                                         <p className="text-slate-500 mt-0.5">{office.address}</p>
-                                        {office.working_hours && <p className="text-slate-400 mt-0.5">🕐 {office.working_hours}</p>}
-                                        {office.phone && <p className="text-slate-400 mt-0.5">📞 {office.phone}</p>}
                                     </div>
                                 );
                             })()}
                         </div>
-                    )}
-
-                    {addressType === 'custom' && (
-                        <div className="space-y-3">
-                            <InputField icon={MapPin} label="Адрес" field="address" placeholder="ул. Ибраимова, 115/3" required
-                                        value={form.address} onChange={update} error={errors.address}
-                                        rightElement={locationButton} />
-                            <div className="grid grid-cols-3 gap-3">
-                                <InputField label="Подъезд" field="entrance" placeholder="2" value={form.entrance} onChange={update} />
-                                <InputField label="Этаж" field="floor" placeholder="3" value={form.floor} onChange={update} />
-                                <InputField label="Квартира" field="apartment" placeholder="42" value={form.apartment} onChange={update} />
+                    ) : (
+                        /* ─── Normal: office or custom address toggle ─── */
+                        <>
+                            <div className="flex bg-surface rounded-xl p-1 mb-4">
+                                <button onClick={() => handleAddressTypeChange('office')}
+                                        className={clsx('flex-1 h-11 rounded-xl text-[14px] font-medium transition-all duration-200 flex items-center justify-center gap-2',
+                                            addressType === 'office' ? 'bg-brand-500 text-white shadow-sm' : 'text-slate-500')}>
+                                    <Building2 size={16} /> Наш офис
+                                </button>
+                                <button onClick={() => handleAddressTypeChange('custom')}
+                                        className={clsx('flex-1 h-11 rounded-xl text-[14px] font-medium transition-all duration-200 flex items-center justify-center gap-2',
+                                            addressType === 'custom' ? 'bg-brand-500 text-white shadow-sm' : 'text-slate-500')}>
+                                    <PenLine size={16} /> Другой адрес
+                                </button>
                             </div>
-                            <InputField icon={MessageSquare} label="Комментарий курьеру" field="courier_comment"
-                                        placeholder="Не звонить, домофон 57" value={form.courier_comment} onChange={update} />
-                        </div>
+
+                            {addressType === 'office' && (
+                                <div>
+                                    <label className="block text-[13px] font-medium text-slate-500 mb-1">Выберите офис *</label>
+                                    <select className={clsx('input', errors.office_id && 'border-red-400')}
+                                            value={form.office_id} onChange={(e) => update('office_id', e.target.value)}>
+                                        <option value="">Выберите офис доставки</option>
+                                        {offices.map(o => <option key={o.id} value={o.id}>{o.name} — {o.address}</option>)}
+                                    </select>
+                                    {errors.office_id && <p className="text-xs text-red-500 mt-1">{errors.office_id}</p>}
+                                    {form.office_id && (() => {
+                                        const office = offices.find(o => o.id === parseInt(form.office_id));
+                                        if (!office) return null;
+                                        return (
+                                            <div className="mt-3 p-3 bg-brand-50 rounded-xl text-sm">
+                                                <p className="font-semibold text-slate-700">{office.name}</p>
+                                                <p className="text-slate-500 mt-0.5">{office.address}</p>
+                                                {office.working_hours && <p className="text-slate-400 mt-0.5">🕐 {office.working_hours}</p>}
+                                                {office.phone && <p className="text-slate-400 mt-0.5">📞 {office.phone}</p>}
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            )}
+
+                            {addressType === 'custom' && (
+                                <div className="space-y-3">
+                                    <InputField icon={MapPin} label="Адрес" field="address" placeholder="ул. Ибраимова, 115/3" required
+                                                value={form.address} onChange={update} error={errors.address} rightElement={locationButton} />
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <InputField label="Подъезд" field="entrance" placeholder="2" value={form.entrance} onChange={update} />
+                                        <InputField label="Этаж" field="floor" placeholder="3" value={form.floor} onChange={update} />
+                                        <InputField label="Квартира" field="apartment" placeholder="42" value={form.apartment} onChange={update} />
+                                    </div>
+                                    <InputField icon={MessageSquare} label="Комментарий курьеру" field="courier_comment"
+                                                placeholder="Не звонить, домофон 57" value={form.courier_comment} onChange={update} />
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
 
@@ -346,27 +380,32 @@ const CheckoutPage = () => {
                 <div className="bg-white rounded-2xl p-4 shadow-card space-y-2">
                     <div className="flex justify-between text-sm"><span className="text-slate-500">Сумма</span><span>{formatPrice(subtotal)} сом</span></div>
                     {discount > 0 && <div className="flex justify-between text-sm"><span className="text-slate-500">Скидка</span><span className="text-emerald-600">-{formatPrice(discount)} сом</span></div>}
-                    <div className="flex justify-between text-sm"><span className="text-slate-500">Доставка</span><span>{formatPrice(DELIVERY_FEE)} сом</span></div>
+                    <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Доставка</span>
+                        <span>{isMorning ? <span className="text-emerald-600 font-medium">Бесплатно ☀️</span> : `${formatPrice(DELIVERY_FEE)} сом`}</span>
+                    </div>
                     <div className="border-t border-dashed border-slate-200 pt-2">
                         <div className="flex justify-between font-bold text-[18px]"><span>Итого</span><span>{formatPrice(total)} сом</span></div>
                     </div>
                 </div>
+
+                {/* ─── Warnings ─── */}
+                {!isOpen && (
+                    <div className="bg-red-50 rounded-xl p-4 text-center">
+                        <p className="text-red-600 font-semibold text-sm">Ресторан сейчас закрыт</p>
+                        <p className="text-red-400 text-xs mt-1">Время работы: {branch?.working_hours_from} — {branch?.working_hours_to}</p>
+                    </div>
+                )}
+
+                {MIN_ORDER > 0 && subtotal < MIN_ORDER && (
+                    <div className="bg-amber-50 rounded-xl p-4 text-center">
+                        <p className="text-amber-600 font-semibold text-sm">Минимальный заказ: {formatPrice(MIN_ORDER)} сом</p>
+                        <p className="text-amber-400 text-xs mt-1">Добавьте ещё на {formatPrice(MIN_ORDER - subtotal)} сом</p>
+                    </div>
+                )}
             </div>
 
-
-            {isMorning && branch?.office_addresses?.length > 0 && (
-                <div className="bg-amber-50 rounded-xl p-3 mb-4 text-sm">
-                    <p className="font-semibold text-amber-700">Утренний режим (07:00-10:00)</p>
-                    <p className="text-amber-600 text-xs mt-1">Доставка бесплатная, только по офисным адресам</p>
-                </div>
-            )}
-            {MIN_ORDER > 0 && subtotal < MIN_ORDER && (
-                <div className="bg-amber-50 rounded-xl p-4 text-center">
-                    <p className="text-amber-600 font-semibold text-sm">Минимальный заказ: {formatPrice(MIN_ORDER)} сом</p>
-                    <p className="text-amber-400 text-xs mt-1">Добавьте ещё на {formatPrice(MIN_ORDER - subtotal)} сом</p>
-                </div>
-            )}
-
+            {/* ─── Pay button ─── */}
             <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-100 safe-bottom">
                 <button
                     onClick={handleSubmit}
@@ -384,7 +423,6 @@ const CheckoutPage = () => {
                     )}
                 </button>
             </div>
-
         </div>
     );
 };

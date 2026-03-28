@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, X, ChefHat, Clock, Heart } from 'lucide-react';
+import { Search, X, ChefHat, Clock, Heart, MapPin } from 'lucide-react';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
 import { getCategories, getPopularItems, searchItems, toggleFavorite, getFavorites } from '../services/api';
@@ -225,6 +225,13 @@ const MenuPage = () => {
                                 className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors">
                             <Clock size={20} className="text-slate-500" />
                         </button>
+
+                        <button onClick={() => { useBranchStore.getState().setBranch(null, null); navigate('/'); }}
+                                className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors"
+                                title="Сменить филиал">
+                            <MapPin size={20} className="text-slate-500" />
+                        </button>
+
                         <button onClick={() => setShowSearch(!showSearch)}
                                 className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors">
                             {showSearch ? <X size={20} className="text-slate-500" /> : <Search size={20} className="text-slate-500" />}
