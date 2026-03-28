@@ -260,7 +260,9 @@ const CheckoutPage = () => {
                     {isMorning && (
                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
                             <p className="font-semibold text-amber-700 text-sm">☀️ Утренний режим</p>
-                            <p className="text-amber-600 text-xs mt-1">Доставка бесплатная! Выберите офис из списка.</p>
+                            <p className="text-amber-600 text-xs mt-1">
+                                Доставка бесплатная! Выберите офис из списка. Заказ доступен только для зарегистрированных офисов. Уточните в списке или позвоните по номеру телефона чтобы зарегистрировать свой офис.
+                            </p>
                         </div>
                     )}
 
