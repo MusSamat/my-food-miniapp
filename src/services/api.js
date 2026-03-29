@@ -46,4 +46,8 @@ export const getReview = (orderId) => api.get(`/reviews/${orderId}`).then(r => r
 export const getBranches = () => api.get('/branches/public').then(r => r.data.data);
 export const getBranchSettings = (id) => api.get(`/branches/public/${id}`).then(r => r.data.data);
 
+// ─── Delivery Zones ───
+export const checkZone = (lat, lng) => api.post('/delivery-zones/check', { lat, lng }).then(r => r.data);
+export const checkZoneByAddress = (address) => api.post('/delivery-zones/check-address', { address }).then(r => r.data);
+
 export default api;

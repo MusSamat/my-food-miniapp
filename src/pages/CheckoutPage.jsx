@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import useCartStore from '../stores/cartStore';
 import useUserStore from '../stores/userStore';
 import useBranchStore from '../stores/branchStore';
-import { createOrder, getOffices, saveUser } from '../services/api';
+import { createOrder, getOffices, saveUser, checkZone, checkZoneByAddress} from '../services/api';
 import { formatPrice } from '../components/ui';
 import { useTelegram } from '../hooks/useTelegram';
 
@@ -39,11 +39,18 @@ const CheckoutPage = () => {
     const { items, promo, clear } = useCartStore();
     const { user: savedUser, updateUser } = useUserStore();
     const { branch, refreshBranch } = useBranchStore();
+    const [zone, setZone] = useState(null); // { zone_id, name, fee, min_order }
+    const [zoneLoading, setZoneLoading] = useState(false);
+
 
     // ─── Branch-based settings ───
     const isMorning = branch?.is_morning_mode === true;
-    const DELIVERY_FEE = isMorning ? 0 : (branch?.delivery_fee || 150);
-    const MIN_ORDER = branch?.min_order_amount || 0;
+    // const DELIVERY_FEE = isMorning ? 0 : (branch?.delivery_fee || 150);
+    // const MIN_ORDER = branch?.min_order_amount || 0;
+
+    // Zone fee overrides branch fee
+    const DELIVERY_FEE = isMorning ? 0 : (zone ? zone.fee : (branch?.delivery_fee || 150));
+    const MIN_ORDER = zone?.min_order || branch?.min_order_amount || 0;
     const isOpen = branch?.is_currently_open !== false;
 
     const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
@@ -59,6 +66,8 @@ const CheckoutPage = () => {
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const [locating, setLocating] = useState(false);
+
+
 
     // ─── Load offices + refresh branch settings ───
     useEffect(() => {
@@ -114,28 +123,41 @@ const CheckoutPage = () => {
     // ─── Geolocation ───
     const handleRequestLocation = async () => {
         setLocating(true);
+        setZoneLoading(true);
         try {
             const loc = await requestLocation();
             if (loc) {
+                // 1. Show coordinates immediately
+                update('address', `${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}`);
+                haptic('success');
+
+                // 2. Check delivery zone
+                const zoneResult = await checkZone(loc.latitude, loc.longitude);
+                if (zoneResult.data) {
+                    setZone(zoneResult.data);
+                    toast.success(`Зона: ${zoneResult.data.name} (${zoneResult.data.fee} сом)`);
+                }
+
+                // 3. Reverse geocode in background for readable address
                 try {
                     const resp = await fetch(
-                        `https://nominatim.openstreetmap.org/reverse?lat=${loc.latitude}&lon=${loc.longitude}&format=json&accept-language=ru`
+                        `https://nominatim.openstreetmap.org/reverse?lat=${loc.latitude}&lon=${loc.longitude}&format=json&accept-language=ru`,
+                        { headers: { 'User-Agent': 'FoodDeliveryApp/1.0' } }
                     );
                     const data = await resp.json();
-                    const addr = data.display_name || `${loc.latitude}, ${loc.longitude}`;
-                    update('address', addr);
-                    updateUser({ latitude: loc.latitude, longitude: loc.longitude, location_address: addr });
-                    toast.success('Адрес определён');
-                    haptic('success');
-                } catch {
-                    update('address', `${loc.latitude}, ${loc.longitude}`);
-                }
+                    if (data.display_name) {
+                        update('address', data.display_name);
+                    }
+                } catch {}
+
+                updateUser({ latitude: loc.latitude, longitude: loc.longitude });
             } else {
                 toast.error('Не удалось определить местоположение');
                 haptic('error');
             }
         } finally {
             setLocating(false);
+            setZoneLoading(false);
         }
     };
 
@@ -344,6 +366,24 @@ const CheckoutPage = () => {
                                 </div>
                             )}
                         </>
+                    )}
+
+                    {/* Zone info */}
+                    {addressType === 'custom' && !isMorning && (
+                        zone ? (
+                            <div className="mt-3 p-3 bg-emerald-50 rounded-xl text-sm animate-fadeIn">
+                                <p className="font-semibold text-emerald-700">📍 Зона: {zone.name}</p>
+                                <p className="text-emerald-600 text-xs mt-0.5">Доставка: {zone.fee} сом</p>
+                            </div>
+                        ) : form.address.length >= 5 && !zoneLoading ? (
+                            <div className="mt-3 p-3 bg-amber-50 rounded-xl text-sm animate-fadeIn">
+                                <p className="text-amber-600 text-xs">Адрес не попадает в зону доставки — будет использована стандартная стоимость</p>
+                            </div>
+                        ) : zoneLoading ? (
+                            <div className="mt-3 p-2 text-xs text-slate-400 flex items-center gap-2">
+                                <Loader2 size={12} className="animate-spin" /> Определяем зону доставки...
+                            </div>
+                        ) : null
                     )}
                 </div>
 
