@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import useCartStore from '../stores/cartStore';
 import useUserStore from '../stores/userStore';
 import useBranchStore from '../stores/branchStore';
-import { createOrder, getOffices, saveUser, checkZone, checkZoneByAddress} from '../services/api';
+import { createOrder, getOffices, saveUser, checkZone, checkZoneByAddress } from '../services/api';
 import { formatPrice } from '../components/ui';
 import { useTelegram } from '../hooks/useTelegram';
 
@@ -39,23 +39,10 @@ const CheckoutPage = () => {
     const { items, promo, clear } = useCartStore();
     const { user: savedUser, updateUser } = useUserStore();
     const { branch, refreshBranch } = useBranchStore();
-    const [zone, setZone] = useState(null); // { zone_id, name, fee, min_order }
-    const [zoneLoading, setZoneLoading] = useState(false);
 
-
-    // ─── Branch-based settings ───
+    // ─── Branch + zone based settings ───
     const isMorning = branch?.is_morning_mode === true;
-    // const DELIVERY_FEE = isMorning ? 0 : (branch?.delivery_fee || 150);
-    // const MIN_ORDER = branch?.min_order_amount || 0;
-
-    // Zone fee overrides branch fee
-    const DELIVERY_FEE = isMorning ? 0 : (zone ? zone.fee : (branch?.delivery_fee || 150));
-    const MIN_ORDER = zone?.min_order || branch?.min_order_amount || 0;
     const isOpen = branch?.is_currently_open !== false;
-
-    const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-    const discount = promo?.discount || 0;
-    const total = subtotal - discount + DELIVERY_FEE;
 
     const [offices, setOffices] = useState([]);
     const [addressType, setAddressType] = useState('office');
@@ -66,10 +53,18 @@ const CheckoutPage = () => {
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const [locating, setLocating] = useState(false);
+    const [zone, setZone] = useState(null);
+    const [zoneLoading, setZoneLoading] = useState(false);
 
+    // ─── Dynamic fee from zone or branch ───
+    const DELIVERY_FEE = isMorning ? 0 : (zone ? zone.fee : (branch?.delivery_fee || 150));
+    const MIN_ORDER = zone?.min_order || branch?.min_order_amount || 0;
 
+    const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+    const discount = promo?.discount || 0;
+    const total = subtotal - discount + DELIVERY_FEE;
 
-    // ─── Load offices + refresh branch settings ───
+    // ─── Load offices + refresh branch ───
     useEffect(() => {
         getOffices().then(setOffices);
         refreshBranch();
@@ -104,6 +99,25 @@ const CheckoutPage = () => {
         if (items.length === 0) navigate('/');
     }, [items]);
 
+    // ─── Auto-check zone when address changes (debounced) ───
+    useEffect(() => {
+        if (addressType !== 'custom' || !form.address || form.address.length < 5 || isMorning) return;
+
+        const timer = setTimeout(async () => {
+            setZoneLoading(true);
+            try {
+                const result = await checkZoneByAddress(form.address);
+                setZone(result.data || null);
+            } catch {
+                setZone(null);
+            } finally {
+                setZoneLoading(false);
+            }
+        }, 1500);
+
+        return () => clearTimeout(timer);
+    }, [form.address, addressType]);
+
     const update = (field, value) => {
         setForm(f => ({ ...f, [field]: value }));
         if (errors[field]) setErrors(e => ({ ...e, [field]: null }));
@@ -112,6 +126,7 @@ const CheckoutPage = () => {
     const handleAddressTypeChange = (type) => {
         setAddressType(type);
         haptic('impact');
+        setZone(null);
         if (type === 'office') {
             setForm(f => ({ ...f, address: '', apartment: '', floor: '', entrance: '' }));
         } else {
@@ -120,34 +135,36 @@ const CheckoutPage = () => {
         setErrors({});
     };
 
-    // ─── Geolocation ───
+    // ─── Geolocation + zone check ───
     const handleRequestLocation = async () => {
         setLocating(true);
         setZoneLoading(true);
         try {
             const loc = await requestLocation();
             if (loc) {
-                // 1. Show coordinates immediately
+                // Show coordinates immediately
                 update('address', `${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}`);
                 haptic('success');
 
-                // 2. Check delivery zone
-                const zoneResult = await checkZone(loc.latitude, loc.longitude);
-                if (zoneResult.data) {
-                    setZone(zoneResult.data);
-                    toast.success(`Зона: ${zoneResult.data.name} (${zoneResult.data.fee} сом)`);
-                }
+                // Check delivery zone
+                try {
+                    const zoneResult = await checkZone(loc.latitude, loc.longitude);
+                    if (zoneResult.data) {
+                        setZone(zoneResult.data);
+                        toast.success(`Зона: ${zoneResult.data.name} (${zoneResult.data.fee} сом)`);
+                    } else {
+                        setZone(null);
+                    }
+                } catch {}
 
-                // 3. Reverse geocode in background for readable address
+                // Reverse geocode for readable address (background)
                 try {
                     const resp = await fetch(
                         `https://nominatim.openstreetmap.org/reverse?lat=${loc.latitude}&lon=${loc.longitude}&format=json&accept-language=ru`,
                         { headers: { 'User-Agent': 'FoodDeliveryApp/1.0' } }
                     );
                     const data = await resp.json();
-                    if (data.display_name) {
-                        update('address', data.display_name);
-                    }
+                    if (data.display_name) update('address', data.display_name);
                 } catch {}
 
                 updateUser({ latitude: loc.latitude, longitude: loc.longitude });
@@ -199,7 +216,6 @@ const CheckoutPage = () => {
             };
 
             if (isMorning) {
-                // Morning mode: office from branch's office_addresses
                 const morningOffice = branch?.office_addresses?.find(o => o.id === parseInt(form.office_id));
                 orderData.address = morningOffice?.address || '';
                 orderData.office_id = parseInt(form.office_id);
@@ -216,7 +232,7 @@ const CheckoutPage = () => {
 
             const result = await createOrder(orderData);
 
-            // ─── Save user data ───
+            // Save user data
             const userData = {
                 telegram_id: userId || 0,
                 username: tgUser?.username,
@@ -273,7 +289,6 @@ const CheckoutPage = () => {
             </div>
 
             <div className="px-4 pt-5 space-y-5">
-
                 {/* ─── Адрес доставки ─── */}
                 <div>
                     <h3 className="text-[14px] font-semibold text-slate-700 mb-3">Адрес доставки</h3>
@@ -282,14 +297,12 @@ const CheckoutPage = () => {
                     {isMorning && (
                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
                             <p className="font-semibold text-amber-700 text-sm">☀️ Утренний режим</p>
-                            <p className="text-amber-600 text-xs mt-1">
-                                Доставка бесплатная! Выберите офис из списка. Заказ доступен только для зарегистрированных офисов. Уточните в списке или позвоните по номеру телефона чтобы зарегистрировать свой офис.
-                            </p>
+                            <p className="text-amber-600 text-xs mt-1">Доставка бесплатная! Выберите офис из списка.</p>
                         </div>
                     )}
 
                     {isMorning ? (
-                        /* ─── Morning: only branch office addresses ─── */
+                        /* Morning: only branch office addresses */
                         <div>
                             <label className="block text-[13px] font-medium text-slate-500 mb-1">Выберите офис *</label>
                             <select className={clsx('input', errors.office_id && 'border-red-400')}
@@ -300,7 +313,6 @@ const CheckoutPage = () => {
                                 ))}
                             </select>
                             {errors.office_id && <p className="text-xs text-red-500 mt-1">{errors.office_id}</p>}
-
                             {form.office_id && (() => {
                                 const office = branch?.office_addresses?.find(o => o.id === parseInt(form.office_id));
                                 if (!office) return null;
@@ -313,7 +325,7 @@ const CheckoutPage = () => {
                             })()}
                         </div>
                     ) : (
-                        /* ─── Normal: office or custom address toggle ─── */
+                        /* Normal: office or custom address toggle */
                         <>
                             <div className="flex bg-surface rounded-xl p-1 mb-4">
                                 <button onClick={() => handleAddressTypeChange('office')}
@@ -368,20 +380,20 @@ const CheckoutPage = () => {
                         </>
                     )}
 
-                    {/* Zone info */}
+                    {/* Zone info (only for custom address, not morning) */}
                     {addressType === 'custom' && !isMorning && (
-                        zone ? (
+                        zoneLoading ? (
+                            <div className="mt-3 p-2 text-xs text-slate-400 flex items-center gap-2">
+                                <Loader2 size={12} className="animate-spin" /> Определяем зону доставки...
+                            </div>
+                        ) : zone ? (
                             <div className="mt-3 p-3 bg-emerald-50 rounded-xl text-sm animate-fadeIn">
                                 <p className="font-semibold text-emerald-700">📍 Зона: {zone.name}</p>
                                 <p className="text-emerald-600 text-xs mt-0.5">Доставка: {zone.fee} сом</p>
                             </div>
-                        ) : form.address.length >= 5 && !zoneLoading ? (
+                        ) : form.address.length >= 5 ? (
                             <div className="mt-3 p-3 bg-amber-50 rounded-xl text-sm animate-fadeIn">
-                                <p className="text-amber-600 text-xs">Адрес не попадает в зону доставки — будет использована стандартная стоимость</p>
-                            </div>
-                        ) : zoneLoading ? (
-                            <div className="mt-3 p-2 text-xs text-slate-400 flex items-center gap-2">
-                                <Loader2 size={12} className="animate-spin" /> Определяем зону доставки...
+                                <p className="text-amber-600 text-xs">Адрес вне зоны — стандартная доставка {branch?.delivery_fee || 150} сом</p>
                             </div>
                         ) : null
                     )}
@@ -424,7 +436,11 @@ const CheckoutPage = () => {
                     {discount > 0 && <div className="flex justify-between text-sm"><span className="text-slate-500">Скидка</span><span className="text-emerald-600">-{formatPrice(discount)} сом</span></div>}
                     <div className="flex justify-between text-sm">
                         <span className="text-slate-500">Доставка</span>
-                        <span>{isMorning ? <span className="text-emerald-600 font-medium">Бесплатно ☀️</span> : `${formatPrice(DELIVERY_FEE)} сом`}</span>
+                        <span>
+                            {isMorning ? <span className="text-emerald-600 font-medium">Бесплатно ☀️</span>
+                                : zone ? <span className="text-emerald-600 font-medium">{formatPrice(zone.fee)} сом <span className="text-xs text-slate-400">({zone.name})</span></span>
+                                    : `${formatPrice(DELIVERY_FEE)} сом`}
+                        </span>
                     </div>
                     <div className="border-t border-dashed border-slate-200 pt-2">
                         <div className="flex justify-between font-bold text-[18px]"><span>Итого</span><span>{formatPrice(total)} сом</span></div>
@@ -432,12 +448,12 @@ const CheckoutPage = () => {
                 </div>
 
                 {/* ─── Warnings ─── */}
-                {/*{!isOpen && (*/}
-                {/*    <div className="bg-red-50 rounded-xl p-4 text-center">*/}
-                {/*        <p className="text-red-600 font-semibold text-sm">Ресторан сейчас закрыт</p>*/}
-                {/*        <p className="text-red-400 text-xs mt-1">Время работы: {branch?.working_hours_from} — {branch?.working_hours_to}</p>*/}
-                {/*    </div>*/}
-                {/*)}*/}
+                {!isOpen && (
+                    <div className="bg-red-50 rounded-xl p-4 text-center">
+                        <p className="text-red-600 font-semibold text-sm">Ресторан сейчас закрыт</p>
+                        <p className="text-red-400 text-xs mt-1">Время работы: {branch?.working_hours_from} — {branch?.working_hours_to}</p>
+                    </div>
+                )}
 
                 {MIN_ORDER > 0 && subtotal < MIN_ORDER && (
                     <div className="bg-amber-50 rounded-xl p-4 text-center">
